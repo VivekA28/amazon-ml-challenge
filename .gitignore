@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data
+data/*
+!data/.gitkeep
+
+# Model files
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.h5
+
+# Generated submissions
+submissions/*
+
+# OS/editor
+.DS_Store
+.vscode/
