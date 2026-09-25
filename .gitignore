@@ -27,4 +27,5 @@ processed/
 
 # OS/editor
 .DS_Store
-.vscode/
+.vscode/output/candidate_pairs_validation.tsv
+output/candidate_pairs_validation.tsv
