@@ -22,6 +22,9 @@ data/*
 # Generated submissions
 submissions/*
 
+# Generated processed data
+processed/
+
 # OS/editor
 .DS_Store
 .vscode/
