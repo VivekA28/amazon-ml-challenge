@@ -754,7 +754,41 @@ Train a pairwise matching model.
 Optimize for validation F_0.5.
 
 ## Priority 7 — Error analysis
+### Error Analysis — EXP-005 (preliminary)
 
+Categorized `val_errors.tsv` (331,023 val entities) into failure buckets
+using `error_analysis_exp005.py`. Full breakdown in
+`experiments/val_errors_categorized.tsv`.
+
+| Category | Count | % of total | Mean F_0.5 |
+|---|---:|---:|---:|
+| nonsingleton_total_miss | 145,718 | 44.0% | 0.000 |
+| nonsingleton_mixed_errors | 100,075 | 30.2% | 0.068 |
+| nonsingleton_under_matched | 63,481 | 19.2% | 0.667 |
+| singleton_correct | 12,636 | 3.8% | 1.000 |
+| singleton_false_positive | 5,952 | 1.8% | 0.000 |
+| nonsingleton_correct | 1,936 | 0.6% | 1.000 |
+| nonsingleton_over_matched | 1,225 | 0.4% | 0.254 |
+
+**Key findings:**
+- 44% of non-singleton entities received zero candidates from exact-name
+  blocking — this is a pure blocking-recall gap, not fixable by feature
+  engineering. Directly consistent with EXP-001's 10.76% pooled recall.
+- India shows a higher rate of total misses (48.6% vs US 45.3%) and
+  mixed errors (36.2% vs US 29.3%), and a higher singleton
+  false-positive rate (35.4% vs US 29.8%) — consistent with the
+  challenge's documented transliteration/DBA-name noise being more
+  pronounced in Indian records.
+- The US shows relatively more under-matched (24.04% vs India 14.75%)
+  and over-matched entities — once a candidate is found, US errors lean
+  toward generic/chain-name precision confusion rather than complete misses.
+- Implication for Priority 4: address- and country-weighted features are
+  needed, not just name similarity — 1.8% of true singletons already get
+  a false match on name alone.
+- Implication for Priority 3: EXP-003/EXP-004's country-aware token
+  blocking should specifically target the `nonsingleton_total_miss`
+  bucket. Once EXP-004 finishes, its recall should be checked against
+  this same bucket, not just the full-training-set aggregate.
 Study:
 - false positives
 - false negatives
