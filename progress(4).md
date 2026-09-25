@@ -622,6 +622,17 @@ python3 utils/validate_submission.py     --matching output/matching_results.tsv 
 
 We should copy/include the official validator in the project and run it before every submission.
 
+### Internal Validation Harness
+**STATUS: IMPLEMENTED (modular)**
+
+- `score_blocking_recall.py` — candidate recall, coverage, avg candidates/S1 (unchanged)
+- `score_f05.py` — macro F_0.5/precision/recall (unchanged)
+- `error_buckets.py` — generalized prediction evaluator + error-bucket
+  categorizer for any predictions file (replaces error_analysis_exp005.py)
+- `threshold_sweep.py` — sweeps thresholds over per-pair model scores;
+  built ahead of the model, untested pending Priority 5 output
+- `validate_pipeline.py` — thin wrapper, shells out to the above three,
+  no scoring logic of its own
 ---
 
 # 16. Leaderboard / Submission Management
