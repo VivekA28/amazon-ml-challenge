@@ -427,6 +427,7 @@ Results are **not recorded yet** because the experiment is still running.
 | EXP-002 | Rare name tokens (2) | 18,766.29 | 77.6881% | ~63.2 min | Complete |
 | EXP-003 | Country + 1 rare token | 5,487.38 | 69.5862% | ~19.2 min | Complete |
 | EXP-004 | Country + 2 rare tokens | TBD | TBD | Running | Running |
+| EXP-005 | Exact normalized name → all candidates emitted as matches (no filtering) | n/a (matching metric, not blocking) | n/a (matching metric, not blocking) | untimed | Complete — first real end-to-end VAL-split F_0.5: 19.3429%. Precision 25.8305%, recall 15.7295% (macro-averaged). Singletons scored much higher (67.9793%, n=18,588) than non-singletons (16.4493%, n=312,435), as expected — with zero filtering, exact-name matches are either exactly right or noisy, and most singletons correctly got zero candidates. Sanity-checks the scorer on real imperfect output; not a real model. |
 
 ### Blocking ideas still to investigate
 
@@ -559,6 +560,8 @@ Every meaningful experiment should be recorded.
 |---|---|---:|---:|---|---:|---|
 | EXP-001 | Exact normalized name | 5.61 | 10.7590% | — | — | Very selective; insufficient recall alone |
 | EXP-002 | Rare name tokens (2 rarest) | 18,766.29 | 77.6881% | — | — | High recall but candidate explosion; diagnostic only |
+
+| EXP-005 | Exact normalized name (EXP-001's blocker) | 5.61 | 10.7590% (micro, train, from EXP-001) | None — every candidate emitted as a final match, no filtering | 19.3429% | First real end-to-end F_0.5 on VAL split (331,023 entities). Precision 25.83%, recall 15.73% (macro). Singleton mean F_0.5: 67.98% (n=18,588). Non-singleton mean F_0.5: 16.45% (n=312,435). Confirms the scorer behaves correctly on real, imperfect predictions — trivial rule-based baseline, not a candidate for the final pipeline. |
 
 ### Experiment lessons
 
