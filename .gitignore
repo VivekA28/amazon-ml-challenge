@@ -11,6 +11,7 @@ env/
 # Data
 data/*
 !data/.gitkeep
+data/feature_lookup.sqlite
 
 # Model files
 *.pkl
@@ -29,3 +30,19 @@ processed/
 .DS_Store
 .vscode/output/candidate_pairs_validation.tsv
 output/candidate_pairs_validation.tsv
+
+# OS/editor
+.DS_Store
+.vscode/
+
+# Generated experiment artifacts
+experiments/*.tsv
+experiments/pipeline_eval/
+experiments/error_analysis/
+
+# Generated candidate/model output
+output/*.tsv
+output/*.txt
+output/*.sqlite
+output/*.duckdb
+output/duckdb_tmp/
