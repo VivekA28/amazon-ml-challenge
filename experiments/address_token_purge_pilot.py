@@ -24,24 +24,13 @@ PILOT_S1 = 75_000
 
 CONFIGS = [
     {
-        "name": "A",
-        "df_fraction": 0.0005,   # 0.05%
-        "top_k": 3,
-        "bucket_cap": 3000,
-    },
-    {
-        "name": "B",
+        "name": "F2",
         "df_fraction": 0.0010,   # 0.10%
-        "top_k": 4,
-        "bucket_cap": 5000,
-    },
-    {
-        "name": "C",
-        "df_fraction": 0.0005,   # 0.05%
         "top_k": 5,
-        "bucket_cap": 3000,
+        "bucket_cap": 6000,
     },
 ]
+
 
 
 # ============================================================
@@ -223,6 +212,7 @@ def main():
             {sql_string(S1_PARQUET)}
         )
 
+        ORDER BY entity_id
         LIMIT {PILOT_S1}
     """)
 
@@ -394,6 +384,7 @@ def main():
         df_fraction = cfg["df_fraction"]
         top_k = cfg["top_k"]
         bucket_cap = cfg["bucket_cap"]
+        min_shared_tokens = 2
 
         print("=" * 70)
         print(f"CONFIG {name}")
@@ -402,6 +393,7 @@ def main():
         print(f"DF fraction: {df_fraction}")
         print(f"Top-K:       {top_k}")
         print(f"Bucket cap:  {bucket_cap}")
+        print(f"Min shared:  {min_shared_tokens}")
 
         start_cfg = timer()
 
@@ -652,10 +644,10 @@ def main():
 
         con.execute("DROP TABLE IF EXISTS candidates")
 
-        con.execute("""
+        con.execute(f"""
             CREATE TEMP TABLE candidates AS
 
-            SELECT DISTINCT
+            SELECT
                 s.entity_id AS source1_entity_id,
                 r.entity_id AS candidate_entity_id
 
@@ -664,6 +656,12 @@ def main():
             INNER JOIN ref_index AS r
                 ON s.country = r.country
                AND s.token = r.token
+
+            GROUP BY
+                s.entity_id,
+                r.entity_id
+
+            HAVING COUNT(DISTINCT s.token) >= {min_shared_tokens}
         """)
 
         candidate_pairs = con.execute("""
@@ -791,8 +789,17 @@ def main():
         # CLEAN CONFIG-SPECIFIC TABLES
         # ====================================================
 
-        # Keep Config A candidates for union analysis.
-        if name != "A":
+        # Keep F2 candidates for union analysis.
+        if name == "F2":
+            con.execute("DROP TABLE IF EXISTS address_f2")
+            con.execute("""
+                CREATE TEMP TABLE address_f2 AS
+                SELECT
+                    source1_entity_id,
+                    candidate_entity_id
+                FROM candidates
+            """)
+        else:
             con.execute("DROP TABLE IF EXISTS candidates")
         con.execute("DROP TABLE IF EXISTS s1_index")
         con.execute("DROP TABLE IF EXISTS s1_tokens")
@@ -804,18 +811,25 @@ def main():
 
 
     # ========================================================
-    # V2 + A TRUE-PAIR UNION ANALYSIS
+    # V2 + F2 TRUE-PAIR UNION ANALYSIS
     # ========================================================
 
     print()
     print("=" * 70)
-    print("V2 + A UNION ANALYSIS")
+    print("V2 + F2 UNION ANALYSIS")
     print("=" * 70)
 
     # Load V2 candidates.
     con.execute("DROP TABLE IF EXISTS v2_analysis")
 
-    con.execute("""
+    v2_path = f"{BASE}/output/candidate_pairs_validation_top2.tsv"
+
+    if not os.path.isfile(v2_path):
+        raise FileNotFoundError(
+            f"V2 candidate file not found: {v2_path}"
+        )
+
+    con.execute(f"""
         CREATE TEMP TABLE v2_analysis AS
 
         SELECT DISTINCT
@@ -833,21 +847,28 @@ def main():
                 ) AS candidate_entity_id
 
             FROM read_csv(
-                'output/candidate_pairs_validation_top2.tsv',
-                delim='\t',
+                {sql_string(v2_path)},
+                delim='\\t',
                 header=true,
                 all_varchar=true,
-                ignore_errors=true
+                ignore_errors=false
             )
-        )
+        ) AS v
 
-        WHERE TRIM(candidate_entity_id) <> ''
+        INNER JOIN pilot_s1 AS s
+            ON TRIM(v.source1_entity_id) = s.entity_id
+
+        WHERE TRIM(v.candidate_entity_id) <> ''
     """)
 
     v2_pairs = con.execute("""
         SELECT COUNT(*)
         FROM v2_analysis
     """).fetchone()[0]
+
+    assert 2_000_000 < v2_pairs < 8_000_000, (
+        f"V2 pilot candidate count looks wrong: {v2_pairs:,}"
+    )
 
     pilot_true = con.execute("""
         SELECT COUNT(*)
@@ -856,62 +877,58 @@ def main():
             ON g.source1_entity_id = s.entity_id
     """).fetchone()[0]
 
-    # V2 true-pair recall.
-    v2_recovered = con.execute("""
-        SELECT COUNT(*)
-
-        FROM gt g
-
-        INNER JOIN v2_analysis v
+    # Memory-safe true-pair hit tables.
+    con.execute("DROP TABLE IF EXISTS v2_gt_hits")
+    con.execute("""
+        CREATE TEMP TABLE v2_gt_hits AS
+        SELECT DISTINCT
+            g.source1_entity_id,
+            g.candidate_entity_id
+        FROM gt AS g
+        INNER JOIN pilot_s1 AS s
+            ON g.source1_entity_id = s.entity_id
+        INNER JOIN v2_analysis AS v
             ON g.source1_entity_id = v.source1_entity_id
            AND g.candidate_entity_id = v.candidate_entity_id
+    """)
 
-        INNER JOIN pilot_s1 s
+    con.execute("DROP TABLE IF EXISTS address_gt_hits")
+    con.execute("""
+        CREATE TEMP TABLE address_gt_hits AS
+        SELECT DISTINCT
+            g.source1_entity_id,
+            g.candidate_entity_id
+        FROM gt AS g
+        INNER JOIN pilot_s1 AS s
             ON g.source1_entity_id = s.entity_id
-    """).fetchone()[0]
-
-    # A true-pair recall.
-    a_recovered = con.execute("""
-        SELECT COUNT(*)
-
-        FROM gt g
-
-        INNER JOIN address_a a
+        INNER JOIN address_f2 AS a
             ON g.source1_entity_id = a.source1_entity_id
            AND g.candidate_entity_id = a.candidate_entity_id
+    """)
 
-        INNER JOIN pilot_s1 s
-            ON g.source1_entity_id = s.entity_id
-    """).fetchone()[0]
-
-    # True pairs A recovers that V2 misses.
-    a_recovers_v2_misses = con.execute("""
+    v2_recovered = con.execute("""
         SELECT COUNT(*)
-
-        FROM gt g
-
-        INNER JOIN pilot_s1 s
-            ON g.source1_entity_id = s.entity_id
-
-        INNER JOIN address_a a
-            ON g.source1_entity_id = a.source1_entity_id
-           AND g.candidate_entity_id = a.candidate_entity_id
-
-        WHERE NOT EXISTS (
-            SELECT 1
-
-            FROM v2_analysis v
-
-            WHERE
-                v.source1_entity_id = g.source1_entity_id
-                AND v.candidate_entity_id = g.candidate_entity_id
-        )
+        FROM v2_gt_hits
     """).fetchone()[0]
 
-    union_recovered = v2_recovered + a_recovers_v2_misses
+    f2_recovered = con.execute("""
+        SELECT COUNT(*)
+        FROM address_gt_hits
+    """).fetchone()[0]
+
+    f2_recovers_v2_misses = con.execute("""
+        SELECT COUNT(*)
+        FROM address_gt_hits AS a
+        LEFT JOIN v2_gt_hits AS v
+            ON a.source1_entity_id = v.source1_entity_id
+           AND a.candidate_entity_id = v.candidate_entity_id
+        WHERE v.source1_entity_id IS NULL
+    """).fetchone()[0]
+
+    union_recovered = v2_recovered + f2_recovers_v2_misses
 
     v2_recall = v2_recovered / pilot_true * 100
-    a_recall = a_recovered / pilot_true * 100
+    a_recall = f2_recovered / pilot_true * 100
     union_recall = union_recovered / pilot_true * 100
 
     print()
@@ -922,17 +939,17 @@ def main():
         f"{v2_recovered:,} ({v2_recall:.4f}%)"
     )
     print(
-        f"A recovered:                  "
-        f"{a_recovered:,} ({a_recall:.4f}%)"
+        f"F2 recovered:                  "
+        f"{f2_recovered:,} ({a_recall:.4f}%)"
     )
     print()
     print(
-        f"A recovers V2 misses:         "
-        f"{a_recovers_v2_misses:,}"
+        f"F2 recovers V2 misses:         "
+        f"{f2_recovers_v2_misses:,}"
     )
     print()
     print(
-        f"V2 + A union recovered:       "
+        f"V2 + F2 union recovered:       "
         f"{union_recovered:,} ({union_recall:.4f}%)"
     )
     print(
@@ -941,15 +958,18 @@ def main():
     )
     print()
     print(f"V2 candidates:                 {v2_pairs:,}")
-    print(f"A candidates:                  {candidate_pairs:,}")
+    f2_pairs = con.execute("SELECT COUNT(*) FROM address_f2").fetchone()[0]
+    print(f"F2 candidates:                  {f2_pairs:,}")
     print(
-        f"Naive V2+A candidate total:    "
-        f"{v2_pairs + candidate_pairs:,}"
+        f"Naive V2+F2 candidate total:    "
+        f"{v2_pairs + f2_pairs:,}"
     )
     print("=" * 70)
 
+    con.execute("DROP TABLE IF EXISTS v2_gt_hits")
+    con.execute("DROP TABLE IF EXISTS address_gt_hits")
     con.execute("DROP TABLE IF EXISTS v2_analysis")
-    con.execute("DROP TABLE IF EXISTS address_a")
+    con.execute("DROP TABLE IF EXISTS address_f2")
 
     # ========================================================
     # FINAL SUMMARY
