@@ -3,7 +3,7 @@
 **Project:** Business Entity Resolution Challenge  
 **Team:** 3 members  
 **Repository:** `VivekA28/amazon-ml-challenge`  
-**Last updated:** 25 September 2026 — blocking experiments finalized for the current validation pipeline; model phase starting
+**Last updated:** 26 September 2026 — validation model frozen; test candidate pipeline completed through V2 ∪ F2 union; final pairwise test generation pending
 
 ---
 
@@ -761,68 +761,169 @@ Streaming profiling has been completed for all train/test source files and the t
 
 Entity-safe validation split, challenge-style macro F_0.5 scorer, error buckets, threshold-sweep infrastructure, and validation wrapper are implemented.
 
-## Priority 3 — Blocking refinement
-**STATUS: COMPLETE FOR FIRST MODEL PASS**
+## Priority 3 — Blocking / candidate generation
+**STATUS: COMPLETE AND FROZEN**
 
-The current practical validation candidate set is frozen:
+Validation blocking for the first model pass is frozen as **V2 ∪ F2**:
+
+- V2: top-2 rare name-token blocking
+- F2: address min-shared-token blocking with bounded postings
+
+No further blocker experiments are planned for this submission pipeline.
+
+### Validation final candidate set
 
 ```text
-output/candidate_pairs_validation.tsv
+V2 candidates:             18,792,789
+F2 candidates:             27,328,347
+V2 ∪ F2 candidates:        45,321,035
+Validation blocking recall: 88.2230%
 ```
 
-Measured:
+## Priority 4 — Pairwise feature engineering
+**STATUS: COMPLETE FOR VALIDATION**
 
-- 331,023 validation S1 entities
-- 97.2295% S1 coverage
-- 10,251,775 candidate pairs
-- 30.97 candidates/S1
-- 67.2492% pairwise blocking recall
+The pairwise feature pipeline is implemented with 13 features:
 
-Broader blockers were tested but rejected because candidate volume became impractical.
+```text
+name_exact
+name_core_exact
+name_jaccard
+name_overlap
+name_ratio
+address_exact
+address_jaccard
+address_overlap
+address_ratio
+address_number_equal
+country_equal
+name_address_mean
+name_address_min
+```
 
-## Priority 4 — Preprocessing / normalization
-**IN PROGRESS — Windows member**
+Validation feature generation completed for **45,321,035 pairs** with **0 missing records**.
 
-Build reusable, chunked normalization for names, addresses and open-set country labels. Preserve original fields and derive tokens/address numbers needed by pairwise features.
+## Priority 5 — First ML model
+**STATUS: COMPLETE / FROZEN**
 
-## Priority 5 — Pairwise feature engineering
-**NEXT — Vivek / team integration**
+LightGBM pairwise model trained on the validation-union feature set:
 
-Implement name, address and cross-field similarity features for the frozen candidate set.
+```text
+Training positives: 1,009,663
+Training negatives: 3,028,989
+Training rows:      4,038,652
+Features:           13
+```
 
-## Priority 6 — First ML model
+Model artifact:
 
-Train a pairwise binary matching model using candidate pairs, with positives from validation/train ground truth and controlled negative sampling.
+```text
+output/pairwise_lgbm_union.txt
+```
 
-## Priority 7 — Threshold tuning
+## Priority 6 — Threshold tuning
+**STATUS: COMPLETE / FROZEN**
 
-Generate model scores and optimize the decision threshold using macro F_0.5. Preserve singleton/no-match handling.
+Validation threshold sweep established **0.95** as the selected threshold.
 
-## Priority 8 — Error analysis
+At threshold 0.95:
 
-Study:
-- false positives
-- false negatives
-- singleton mistakes
-- country-specific behavior
-- difficult names
-- difficult addresses
-- errors caused by the known blocking-recall ceiling
+```text
+Macro F0.5:    85.8274%
+Macro precision: 91.2531%
+Macro recall:    77.0325%
+```
 
-## Priority 9 — Improvements
+The model and threshold are now frozen for the test pipeline.
 
-Only test additional blocking/features/embeddings if model/error analysis shows a concrete benefit.
+## Priority 7 — Test candidate pipeline
+**STATUS: COMPLETE**
 
-## Priority 10 — Final pipeline
+Test V2 and F2 candidate generation completed:
 
-Generate:
+```text
+Test S1:                 1,732,544
+V2 pairs:              163,428,982
+F2 pairs:              180,192,389
+V2 ∪ F2 unique pairs:  338,406,680
+Duplicates removed:      5,214,691
+```
+
+Final candidate union:
+
+```text
+output/candidate_pairs_test_union.tsv
+```
+
+Properties:
+
+```text
+Union file size:          4.08 GB
+S1s with candidates:      1,724,832
+S1s with zero candidates:     7,712
+```
+
+The 7,712 zero-candidate S1 entities must still appear in the final submission with an empty match list.
+
+The completed union is also retained in:
+
+```text
+output/candidate_union_test.duckdb
+```
+
+DuckDB union database size observed: ~12 GB.
+
+## Priority 8 — Test pairwise feature generation
+**STATUS: PENDING**
+
+The remaining heavy computation is pairwise feature generation for the **338.4M test candidate pairs**.
+
+A validation timing reference is approximately:
+
+```text
+45.32M pairs → ~30 min
+```
+
+giving a rough test-scale estimate of several hours. This is suitable for an overnight run or can be moved to the Windows teammate's machine if hardware is preferable.
+
+No test pairwise generation has been started yet.
+
+## Priority 9 — Test scoring / prediction
+**STATUS: PENDING**
+
+Planned:
+
+```text
+test pairwise features
+        ↓
+frozen LightGBM model
+        ↓
+threshold 0.95
+        ↓
+matching_results.tsv
+```
+
+Final prediction writer must output **all 1,732,544 test S1 entities**, including the 7,712 with no candidate matches.
+
+## Priority 10 — Final validation / submission
+**STATUS: PENDING**
+
+Run the official validator on:
 
 ```text
 matching_results.tsv
 candidate_pairs.tsv
 ```
 
-Then run the official validator and package the reproducible solution.
+Verify:
+
+- exactly one row per test S1
+- no duplicate predicted IDs
+- predictions are S2/S3 IDs from test data
+- every prediction is contained in the candidate set
+- empty match lists are retained where appropriate
+
+---
 
 # 20. Current Overall Status
 
@@ -836,13 +937,17 @@ Initial scale analysis    ██████████ 100%  ✅
 Data profiling            ██████████ 100%  ✅
 
 Validation framework      ██████████ 100%  ✅
-Blocking                  ████████░░  80%  🟢  (first model candidate set frozen)
-Feature engineering       ██░░░░░░░░  20%  🟡  (pipeline specification ready)
-Baseline model            ░░░░░░░░░░   0%  ⬜
-Threshold optimization    ░░░░░░░░░░   0%  ⬜
-Error analysis            ███░░░░░░░  30%  🟡  (EXP-005 preliminary buckets complete)
-Final pipeline            ░░░░░░░░░░   0%  ⬜
-Submission                ░░░░░░░░░░   0%  ⬜
+Blocking                  ██████████ 100%  ✅  (V2 ∪ F2 frozen)
+Feature engineering       ██████████ 100%  ✅  (validation complete)
+Baseline model            ██████████ 100%  ✅  (LightGBM frozen)
+Threshold optimization    ██████████ 100%  ✅  (0.95 frozen)
+Test candidate generation ██████████ 100%  ✅
+Test candidate union      ██████████ 100%  ✅  (338.4M pairs)
+
+Test pairwise features    ░░░░░░░░░░   0%  ⬜  (next heavy job)
+Test scoring              ░░░░░░░░░░   0%  ⬜
+Final predictions         ░░░░░░░░░░   0%  ⬜
+Final submission          ░░░░░░░░░░   0%  ⬜
 ```
 
 # 21. Critical Rules — QUICK REFERENCE
@@ -862,16 +967,34 @@ Submission                ░░░░░░░░░░   0%  ⬜
 
 # 22. Current Decision
 
-**Blocking is frozen for the first pairwise-model iteration.**
+**The validation/modeling pipeline is frozen. The test candidate set is complete.**
 
-Current validation evidence:
+Current final test candidate set:
 
-> The practical multi-layer candidate generator (`EXP-007`) covers 97.2295% of validation S1 entities and produces 10,251,775 candidate pairs (30.97/S1), with 67.2492% pairwise blocking recall.
+```text
+V2 + F2 union
+338,406,680 unique candidate pairs
+1,724,832 S1 entities with candidates
+7,712 S1 entities with zero candidates
+```
 
-Broader alternatives reached higher recall but were computationally impractical: EXP-004 reached 77.6881% recall at 32.7B pairs, while the later v3 bounded validation run produced 985.9M pairs.
+The candidate union has been successfully materialized after an initial DuckDB OOM during unpartitioned final aggregation. The union itself was already complete; the final TSV was written safely using 16 hash partitions.
 
-Therefore the immediate next step is:
+Current output:
 
-> **Use `output/candidate_pairs_validation.tsv` for pairwise feature extraction, train the first matching model, generate validation scores, and optimize the decision threshold for macro F_0.5.**
+```text
+output/candidate_pairs_test_union.tsv
+```
 
-The known 32.75% blocking-recall gap remains an explicit limitation and should only trigger another blocking iteration if model/error analysis demonstrates that it materially limits the final system.
+The remaining work is intentionally limited to:
+
+1. Generate test pairwise features.
+2. Score using the frozen LightGBM model.
+3. Apply threshold 0.95.
+4. Produce a submission containing every test S1.
+5. Run the official submission validator.
+
+The test pairwise feature job is the next major compute step and can be run overnight or transferred to the Windows teammate if that machine is more suitable.
+
+**No further blocking experiments or model/threshold experimentation is planned unless a concrete implementation failure requires it.**
+
